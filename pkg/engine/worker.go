@@ -160,8 +160,8 @@ func (w *Worker) downloadChunk(c *Chunk) error {
 		return fmt.Errorf("bad status code: %d", resp.StatusCode)
 	}
 
-	// 64 KB streaming buffer for high throughput
-	buf := make([]byte, 64*1024)
+	// 128 KB streaming buffer for high throughput
+	buf := make([]byte, 128*1024)
 	writeOffset := currentStart
 
 	for {

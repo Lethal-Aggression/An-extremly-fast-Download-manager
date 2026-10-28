@@ -34,7 +34,7 @@ func DefaultConfig() *AppConfig {
 	return &AppConfig{
 		DownloadDir:       dlDir,
 		ChunkSizeMB:       8, // 8 MiB chunks balances memory overhead and concurrency
-		ThreadsPerAdapter: 4, // 4 concurrent connections per adapter
+		ThreadsPerAdapter: 8, // 8 concurrent connections per adapter for max saturation
 		AutoBondAll:       true,
 		WebPort:           8989,
 		RememberedPhones:  make(map[string]string),
