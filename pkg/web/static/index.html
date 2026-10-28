@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TurboDL — Multi-Interface Bandwidth Aggregator</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Navbar -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-icon">>_</div>
+        <div class="brand-text">
+          <h1>TurboDL</h1>
+          <span class="tagline">Multi-Interface Hardware Speed Aggregator</span>
+        </div>
+      </div>
+      <div class="nav-controls">
+        <div id="connectionStatus" class="status-pill status-ready">
+          <span class="dot"></span> <span id="statusText">Bonding Ready</span>
+        </div>
+        <button id="openModalBtn" class="btn btn-primary glow-btn">+ New Download</button>
+      </div>
+    </header>
+
+    <!-- Speedometers Row -->
+    <section class="dashboard-grid">
+      <!-- Main Aggregated Speedometer -->
+      <div class="card speed-card total-speed-card">
+        <div class="card-header">
+          <span class="card-title">COMBINED DOWNLOAD SPEED</span>
+          <span class="badge badge-primary">Bonded</span>
+        </div>
+        <div class="speed-display">
+          <div class="speed-value" id="totalSpeed">0.0</div>
+          <div class="speed-unit" id="totalSpeedUnit">MB/s</div>
+        </div>
+        <div class="speed-meta">
+          <span>PC Wi-Fi + Phone Tethering Combined</span>
+        </div>
+      </div>
+
+      <!-- Adapter Speeds -->
+      <div class="card speed-card sub-speed-card" id="pcCard">
+        <div class="card-header">
+          <span class="card-title">[WIFI] PC WI-FI</span>
+          <span class="badge" id="pcStatusBadge">Active</span>
+        </div>
+        <div class="speed-display sub-display">
+          <div class="speed-value" id="pcSpeed">0.0</div>
+          <div class="speed-unit">MB/s</div>
+        </div>
+        <div class="meter-bar"><div class="meter-fill" id="pcMeter" style="width: 0%"></div></div>
+      </div>
+
+      <div class="card speed-card sub-speed-card" id="phoneCard">
+        <div class="card-header">
+          <span class="card-title">[PHONE] TETHER</span>
+          <span class="badge badge-accent" id="phoneStatusBadge">Plug & Play Ready</span>
+        </div>
+        <div class="speed-display sub-display">
+          <div class="speed-value" id="phoneSpeed">0.0</div>
+          <div class="speed-unit">MB/s</div>
+        </div>
+        <div class="meter-bar"><div class="meter-fill meter-accent" id="phoneMeter" style="width: 0%"></div></div>
+      </div>
+    </section>
+
+    <!-- Real-time Bandwidth Waveform Graph -->
+    <section class="card graph-card">
+      <div class="card-header">
+        <span class="card-title">REAL-TIME BANDWIDTH TELEMETRY</span>
+        <div class="graph-legend">
+          <span class="legend-item"><span class="legend-color legend-total"></span> Total</span>
+          <span class="legend-item"><span class="legend-color legend-pc"></span> PC Wi-Fi</span>
+          <span class="legend-item"><span class="legend-color legend-phone"></span> Phone Tether</span>
+        </div>
+      </div>
+      <div class="canvas-wrapper">
+        <canvas id="speedCanvas" height="140"></canvas>
+      </div>
+    </section>
+
+    <!-- Active Download Card -->
+    <section class="card download-card" id="activeDownloadSection">
+      <div class="card-header">
+        <div class="download-info">
+          <h2 id="dlFilename">No active download</h2>
+          <div class="dl-subtext" id="dlMeta">Paste a download URL to see dual-pipe acceleration</div>
+        </div>
+        <div class="download-actions" id="dlActions" style="display: none;">
+          <button id="pauseResumeBtn" class="btn btn-secondary">Pause</button>
+        </div>
+      </div>
+
+      <div class="progress-container">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="dlProgressFill" style="width: 0%"></div>
+        </div>
+        <div class="progress-stats">
+          <span id="dlDownloaded">0 MB / 0 MB</span>
+          <span id="dlPercentage">0%</span>
+          <span id="dlETA">ETA: --:--</span>
+        </div>
+      </div>
+
+      <!-- Chunk Heatmap -->
+      <div class="chunk-section">
+        <div class="chunk-header">
+          <span>PARALLEL CHUNK HEATMAP (<span id="chunkDoneCount">0</span>/<span id="chunkTotalCount">0</span> Chunks)</span>
+          <span class="chunk-hint">Work-stealing range blocks</span>
+        </div>
+        <div class="chunk-grid" id="chunkGrid"></div>
+      </div>
+    </section>
+
+    <!-- Network Adapters & Hot-Plug Watcher -->
+    <section class="card adapters-card">
+      <div class="card-header">
+        <div class="title-with-desc">
+          <span class="card-title">NETWORK INTERFACES & HOT-PLUG HARDWARE</span>
+          <p class="section-desc">Plug in your phone via USB cable and toggle USB Tethering — TurboDL detects and bonds it instantly!</p>
+        </div>
+        <button id="refreshAdaptersBtn" class="btn btn-sm btn-ghost">Scan Hardware</button>
+      </div>
+      <div class="adapters-list" id="adaptersList">
+        <!-- Rendered via JS -->
+      </div>
+    </section>
+  </div>
+
+  <!-- New Download Modal -->
+  <div class="modal-overlay" id="downloadModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Start Turbo Download</h3>
+        <button class="modal-close" id="closeModalBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="urlInput">Download URL (Direct link, ISO, ZIP, Game file, etc.)</label>
+          <input type="url" id="urlInput" placeholder="https://example.com/large-file.iso" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="filenameInput">Custom Filename (Optional)</label>
+          <input type="text" id="filenameInput" placeholder="Leave empty for auto-detection">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelModalBtn">Cancel</button>
+        <button class="btn btn-primary" id="startDlBtn">[+] Start Accelerated Download</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

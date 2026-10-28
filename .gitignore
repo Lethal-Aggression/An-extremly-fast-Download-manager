@@ -1,0 +1,8 @@
+/turbodl
+/turbodl.exe
+*.bin
+*.dat
+*.iso
+*.meta
+turbodl_config.json
+downloads/
