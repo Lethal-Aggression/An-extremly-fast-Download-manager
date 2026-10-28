@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,6 +17,13 @@ import (
 var phoneNodeBinary []byte
 
 const ADBProxyPort = 18989
+
+var (
+	adbMu         sync.Mutex
+	cachedAdapter *Adapter
+	cachedSerial  string
+	lastChecked   time.Time
+)
 
 // findADB searches for adb in common paths.
 func findADB() string {
@@ -35,6 +43,25 @@ func findADB() string {
 
 // CheckADBDevices checks for connected Android devices via ADB and sets up the direct high-speed pipe.
 func CheckADBDevices() (*Adapter, error) {
+	adbMu.Lock()
+	defer adbMu.Unlock()
+
+	// If we have a healthy cached adapter and checked recently, verify quickly
+	if cachedAdapter != nil && time.Since(lastChecked) < 3*time.Second {
+		return cachedAdapter, nil
+	}
+
+	// Quick health check on existing proxy
+	testClient := &http.Client{Timeout: 300 * time.Millisecond}
+	resp, err := testClient.Get(fmt.Sprintf("http://127.0.0.1:%d/health", ADBProxyPort))
+	if err == nil && resp.StatusCode == http.StatusOK {
+		resp.Body.Close()
+		lastChecked = time.Now()
+		if cachedAdapter != nil {
+			return cachedAdapter, nil
+		}
+	}
+
 	adbPath := findADB()
 	if adbPath == "" {
 		return nil, fmt.Errorf("adb not found")
@@ -57,7 +84,14 @@ func CheckADBDevices() (*Adapter, error) {
 	}
 
 	if serial == "" {
+		cachedAdapter = nil
 		return nil, fmt.Errorf("no authorized adb device attached")
+	}
+
+	// If serial matches and proxy is already up, keep using it without re-forwarding
+	if cachedSerial == serial && cachedAdapter != nil {
+		lastChecked = time.Now()
+		return cachedAdapter, nil
 	}
 
 	// Get device model
@@ -68,27 +102,17 @@ func CheckADBDevices() (*Adapter, error) {
 		model = "Android Phone"
 	}
 
-	// Check if proxy responds
-	testClient := &http.Client{Timeout: 800 * time.Millisecond}
-	resp, err := testClient.Get(fmt.Sprintf("http://127.0.0.1:%d/", ADBProxyPort))
-	needsLaunch := true
-	if err == nil {
-		resp.Body.Close()
-		needsLaunch = false
-	}
+	// Extract embedded binary and push only once
+	tmpPath := filepath.Join(os.TempDir(), "turbodl_node")
+	_ = os.WriteFile(tmpPath, phoneNodeBinary, 0755)
 
-	if needsLaunch {
-		// Extract embedded binary to temp and push to phone
-		tmpPath := filepath.Join(os.TempDir(), "turbodl_node")
-		_ = os.WriteFile(tmpPath, phoneNodeBinary, 0755)
+	_ = exec.Command(adbPath, "-s", serial, "push", tmpPath, "/data/local/tmp/phone_node").Run()
+	_ = exec.Command(adbPath, "-s", serial, "forward", fmt.Sprintf("tcp:%d", ADBProxyPort), fmt.Sprintf("tcp:%d", ADBProxyPort)).Run()
+	_ = exec.Command(adbPath, "-s", serial, "shell", "nohup /data/local/tmp/phone_node >/dev/null 2>&1 &").Start()
+	time.Sleep(300 * time.Millisecond)
 
-		_ = exec.Command(adbPath, "-s", serial, "push", tmpPath, "/data/local/tmp/phone_node").Run()
-		_ = exec.Command(adbPath, "-s", serial, "forward", fmt.Sprintf("tcp:%d", ADBProxyPort), fmt.Sprintf("tcp:%d", ADBProxyPort)).Run()
-		_ = exec.Command(adbPath, "-s", serial, "shell", "nohup /data/local/tmp/phone_node >/dev/null 2>&1 &").Start()
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	return &Adapter{
+	cachedSerial = serial
+	cachedAdapter = &Adapter{
 		ID:          "adb_" + serial,
 		Name:        fmt.Sprintf("adb-%s", serial),
 		DisplayName: fmt.Sprintf("[PHONE] TETHER (USB-ADB) [%s]", model),
@@ -99,5 +123,8 @@ func CheckADBDevices() (*Adapter, error) {
 		Connected:   true,
 		ProxyURL:    fmt.Sprintf("http://127.0.0.1:%d/?url=", ADBProxyPort),
 		LastSeen:    time.Now(),
-	}, nil
+	}
+	lastChecked = time.Now()
+
+	return cachedAdapter, nil
 }

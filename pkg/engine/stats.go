@@ -5,23 +5,28 @@ import (
 	"time"
 )
 
-// SpeedTracker tracks throughput for adapters and overall download.
+type speedSample struct {
+	time  time.Time
+	bytes int64
+}
+
+// SpeedTracker tracks throughput for adapters and overall download using sliding window.
 type SpeedTracker struct {
-	mu           sync.RWMutex
-	lastTime     time.Time
-	lastBytes    int64
-	totalBytes   int64
-	currentSpeed int64 // bytes per second (smoothed)
-	adapterBytes map[string]int64
-	adapterSpeed map[string]int64
+	mu            sync.RWMutex
+	totalBytes    int64
+	currentSpeed  int64 // bytes per second
+	totalSamples  []speedSample
+	adapterBytes  map[string]int64
+	adapterSpeed  map[string]int64
+	adapterSamples map[string][]speedSample
 }
 
 // NewSpeedTracker creates a new tracker.
 func NewSpeedTracker() *SpeedTracker {
 	return &SpeedTracker{
-		lastTime:     time.Now(),
-		adapterBytes: make(map[string]int64),
-		adapterSpeed: make(map[string]int64),
+		adapterBytes:   make(map[string]int64),
+		adapterSpeed:   make(map[string]int64),
+		adapterSamples: make(map[string][]speedSample),
 	}
 }
 
@@ -34,42 +39,48 @@ func (s *SpeedTracker) AddBytes(adapterID string, n int64) {
 	s.adapterBytes[adapterID] += n
 }
 
-// Tick recalculates current speeds based on elapsed time (call ~once per 500ms - 1s).
+// Tick recalculates smoothed rolling window speeds (call every ~200ms - 500ms).
 func (s *SpeedTracker) Tick() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	now := time.Now()
-	elapsed := now.Sub(s.lastTime).Seconds()
-	if elapsed < 0.2 {
-		return
+
+	// 1. Total speed window (rolling 1.5 seconds)
+	s.totalSamples = append(s.totalSamples, speedSample{time: now, bytes: s.totalBytes})
+	// Purge samples older than 1.5s
+	cutoff := now.Add(-1500 * time.Millisecond)
+	for len(s.totalSamples) > 2 && s.totalSamples[0].time.Before(cutoff) {
+		s.totalSamples = s.totalSamples[1:]
 	}
 
-	// Overall speed
-	diffBytes := s.totalBytes - s.lastBytes
-	instantSpeed := int64(float64(diffBytes) / elapsed)
-
-	// Smooth with EWMA (70% previous, 30% new)
-	if s.currentSpeed == 0 {
-		s.currentSpeed = instantSpeed
-	} else {
-		s.currentSpeed = int64(0.7*float64(s.currentSpeed) + 0.3*float64(instantSpeed))
-	}
-
-	s.lastBytes = s.totalBytes
-	s.lastTime = now
-
-	// Per-adapter speeds
-	for id, bytes := range s.adapterBytes {
-		// Calculate speed for adapter
-		speed := int64(float64(bytes) / elapsed)
-		if prev, ok := s.adapterSpeed[id]; ok && prev > 0 {
-			s.adapterSpeed[id] = int64(0.7*float64(prev) + 0.3*float64(speed))
-		} else {
-			s.adapterSpeed[id] = speed
+	if len(s.totalSamples) >= 2 {
+		first := s.totalSamples[0]
+		last := s.totalSamples[len(s.totalSamples)-1]
+		elapsed := last.time.Sub(first.time).Seconds()
+		if elapsed > 0.1 {
+			diff := last.bytes - first.bytes
+			s.currentSpeed = int64(float64(diff) / elapsed)
 		}
-		// Reset interval counter
-		s.adapterBytes[id] = 0
+	}
+
+	// 2. Per-adapter rolling window
+	for id, totalAdapterBytes := range s.adapterBytes {
+		samples := append(s.adapterSamples[id], speedSample{time: now, bytes: totalAdapterBytes})
+		for len(samples) > 2 && samples[0].time.Before(cutoff) {
+			samples = samples[1:]
+		}
+		s.adapterSamples[id] = samples
+
+		if len(samples) >= 2 {
+			first := samples[0]
+			last := samples[len(samples)-1]
+			elapsed := last.time.Sub(first.time).Seconds()
+			if elapsed > 0.1 {
+				diff := last.bytes - first.bytes
+				s.adapterSpeed[id] = int64(float64(diff) / elapsed)
+			}
+		}
 	}
 }
 

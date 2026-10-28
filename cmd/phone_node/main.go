@@ -9,7 +9,7 @@ import (
 
 func main() {
 	transport := &http.Transport{
-		MaxIdleConns:        100,
+		MaxIdleConns:        200,
 		MaxIdleConnsPerHost: 50,
 		IdleConnTimeout:     90 * time.Second,
 		DisableKeepAlives:   false,
@@ -18,6 +18,11 @@ func main() {
 		Transport: transport,
 		Timeout:   60 * time.Second,
 	}
+
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("OK"))
+	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		rawTarget := r.URL.Query().Get("url")
