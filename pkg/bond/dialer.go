@@ -47,6 +47,11 @@ func NewBoundDialer(adapter *Adapter, timeout time.Duration) *net.Dialer {
 		KeepAlive: 30 * time.Second,
 	}
 
+	if adapter != nil && adapter.ProxyURL != "" {
+		// ADB local proxy: connect over standard loopback tunnel
+		return dialer
+	}
+
 	if adapter != nil && adapter.IP != nil {
 		dialer.LocalAddr = &net.TCPAddr{
 			IP:   adapter.IP,

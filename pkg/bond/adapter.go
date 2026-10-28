@@ -22,6 +22,7 @@ type Adapter struct {
 	Enabled      bool      `json:"enabled"`      // Whether enabled for bonding
 	Connected    bool      `json:"connected"`    // Has verified internet route
 	SpeedBps     int64     `json:"speed_bps"`    // Current measured download speed in bytes/sec
+	ProxyURL     string    `json:"proxy_url"`    // Optional proxy endpoint (e.g. for ADB direct tunnel)
 	LastSeen     time.Time `json:"last_seen"`
 }
 
@@ -116,6 +117,11 @@ func GetActiveAdapters() ([]*Adapter, error) {
 			Connected:   true,
 			LastSeen:    time.Now(),
 		})
+	}
+
+	// Also check for ADB direct USB tethering pipe
+	if adbAdapter, err := CheckADBDevices(); err == nil && adbAdapter != nil {
+		adapters = append(adapters, adbAdapter)
 	}
 
 	return adapters, nil

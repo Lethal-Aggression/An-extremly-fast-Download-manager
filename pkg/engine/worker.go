@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -141,7 +142,12 @@ func (w *Worker) downloadChunk(c *Chunk) error {
 		return nil
 	}
 
-	req, err := http.NewRequestWithContext(w.ctx, "GET", w.URL, nil)
+	targetReqURL := w.URL
+	if w.Adapter != nil && w.Adapter.ProxyURL != "" {
+		targetReqURL = fmt.Sprintf("%s%s", w.Adapter.ProxyURL, url.QueryEscape(w.URL))
+	}
+
+	req, err := http.NewRequestWithContext(w.ctx, "GET", targetReqURL, nil)
 	if err != nil {
 		return err
 	}
